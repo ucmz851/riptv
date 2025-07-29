@@ -1,0 +1,73 @@
+[package]
+name = "riptv"
+version = "1.0.0"
+edition = "2024"
+authors = ["Your Name <your.email@example.com>"]
+description = "⚡ Blazing fast IPTV player written in Rust"
+license = "MIT"
+repository = "https://github.com/yourusername/riptv"
+keywords = ["iptv", "m3u", "media", "player", "streaming"]
+categories = ["multimedia", "command-line-utilities"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# CLI argument parsing
+clap = { version = "4.4", features = ["derive", "color"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Fuzzy finder
+skim = "0.10"
+
+# Terminal handling
+crossterm = "0.27"
+console = "0.15"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# String utilities
+regex = "1.10"
+fuzzy-matcher = "0.3"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# File system utilities
+dirs = "5.0"
+walkdir = "2.4"
+
+# HTTP client for future features
+reqwest = { version = "0.11", features = ["json"] }
+
+# URL parsing
+url = "2.5"
+
+# Progress bars
+indicatif = "0.17"
+
+# Colors and styling
+colored = "2.1"
+
+[profile.release]
+# Maximum optimizations
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+# Faster debug builds
+opt-level = 1
+debug = true
+
+[[bin]]
+name = "riptv"
+path = "src/main.rs"
