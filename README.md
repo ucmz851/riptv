@@ -2,89 +2,88 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/yourusername/riptv)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/ucmz851/riptv)
 
 ⚡ **RIPTV** is a lightning-fast IPTV player written in Rust, designed to handle large playlists with instant search and blazing performance.
 
-> **Currently fully supported on Linux only.** macOS and Windows support are **under development**.
+> **Currently supported on Linux only.**
+> macOS and Windows support are **under development**.
+
+---
 
 ## 🚀 Features
 
 * ⚡ **Lightning Fast**: Parse large playlists in seconds
 * 🔍 **Fuzzy Search**: Real-time filtering with intelligent matching
 * 🎬 **Optimized Playback**: Tuned for streaming performance on Linux
-* 📊 **Playlist Statistics**: Basic stats available
-* 💾 **History & Favorites**: Track recently played channels and save favorites
-* 🎨 **Modern Terminal UI**: Beautiful TUI for Linux terminals
-* 🔧 **Configurable**: Customize player, playlist, and UI
-* 🦀 **Memory Safe**: Written in Rust for reliability
+* 📊 **Playlist Statistics**: Quick overview of channels & categories
+* 💾 **History & Favorites**: Track recently played channels
+* 🎨 **Modern Terminal UI**: Beautiful TUI interface
+* 🔧 **Configurable**: Playlist, player, and UI options
+* 🦀 **Memory Safe**: 100% Rust reliability
 
-> **Note:** Some advanced features (cross-platform support, detailed stats, remote web interface) are under development.
+---
 
-## 📦 Installation
+## 📦 Installation (Linux)
 
-### Prerequisites
+### ⚡ One-Liner Install (Recommended)
 
-1. **Rust** (1.70 or later): [Install Rust](https://rustup.rs/)
-2. **Media Player** (Linux only currently):
-
-   * **mpv** (recommended): `sudo apt install mpv`
-   * VLC or ffplay may work but not fully tested
-
-### Build from Source
+Just copy-paste this into your terminal:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/riptv.git
-cd riptv
-
-# Build release version
-cargo build --release
-
-# Binary is located at:
-./target/release/riptv
+curl -sSL https://raw.githubusercontent.com/ucmz851/riptv/main/install.sh | bash
 ```
 
-## 🎯 Quick Start (Linux Only)
+This will:
+✅ Download the repo
+✅ Build with Cargo (Rust)
+✅ Install `riptv` into `/usr/local/bin`
+
+> You may need to enter your **sudo password** during installation.
+
+---
+
+### 🛠️ Manual Build (Alternative)
+
+If you prefer manual installation:
+
+```bash
+# Install prerequisites
+sudo apt install mpv git curl -y   # Debian/Ubuntu
+# Make sure Rust is installed: https://rustup.rs/
+
+# Clone and build
+git clone https://github.com/ucmz851/riptv.git
+cd riptv
+cargo build --release
+
+# Run directly
+./target/release/riptv --playlist your_playlist.m3u
+```
+
+---
+
+## 🎯 Quick Start
 
 ```bash
 # Play a playlist
-./target/release/riptv --playlist your_playlist.m3u
+riptv --playlist playlist.m3u
 
 # Search for a channel
-./target/release/riptv --playlist playlist.m3u --search "BBC"
+riptv --playlist playlist.m3u --search "BBC"
 
 # Show playlist statistics
-./target/release/riptv --playlist playlist.m3u --stats
+riptv --playlist playlist.m3u --stats
 
-# Use a different player (Linux)
-./target/release/riptv --playlist playlist.m3u --player vlc
+# Use a different player
+riptv --playlist playlist.m3u --player vlc
 ```
 
-### Controls
-
-* **Channel Selector:**
-
-  * Type to search
-  * ↑/↓ or Ctrl+K/J to navigate
-  * Tab: toggle preview panel
-  * Enter: play channel
-  * Esc/Ctrl+C: quit
-
-* **Media Player (mpv):**
-
-  * q: quit
-  * f: fullscreen
-  * 9/0: volume down/up
-  * ←/→: seek
-  * Space: pause/resume
+---
 
 ## ⚙️ Configuration
 
-Config file is located at:
-
-* **Linux:** `~/.config/riptv/config.json`
-* **Windows/macOS:** Not supported yet
+Config file: `~/.config/riptv/config.json`
 
 Example:
 
@@ -99,32 +98,19 @@ Example:
 }
 ```
 
-## 🐛 Known Limitations
+---
 
-* **Windows/macOS:** Not yet supported
-* **Some advanced features:** Under development (remote control, EPG, recording)
-* Fully functional and stable on **Linux only**
+## 🐛 Limitations
 
-## 🤝 Contributing
+* Works only on **Linux** right now
+* Windows/macOS builds are coming soon
+* Advanced features (remote control, EPG, recording) in progress
 
-1. Fork the repo
-2. Create a branch (`git checkout -b feature-name`)
-3. Commit changes (`git commit -m "Add feature"`)
-4. Push to branch (`git push origin feature-name`)
-5. Open a Pull Request
+---
 
 ## 📜 License
 
 MIT License. See [LICENSE](LICENSE) for details.
 
----
-
 **Made with ❤️ and 🦀 Rust**
 
-*Compile with `cargo build --release` for best performance on Linux.*
-
----
-
-If you want, I can also rewrite the **Installation & Quick Start sections** to make it crystal clear **Linux only**, and remove all Windows/macOS examples, so users don’t get confused.
-
-Do you want me to do that?
