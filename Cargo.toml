@@ -1,13 +1,13 @@
 [package]
 name = "riptv"
 version = "1.0.0"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Usama Imran <usamaimrancheema435@gmail.com>"]
 edition = "2024"
 description = "⚡ Blazing fast IPTV player written in Rust"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 homepage = "https://github.com/yourusername/riptv"
-repository = "https://github.com/yourusername/riptv"
+repository = "https://github.com/ucmz851/riptv"
 keywords = ["iptv", "media", "player", "streaming", "m3u"]
 categories = ["multimedia", "command-line-utilities"]
 
