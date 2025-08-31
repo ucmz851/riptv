@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 use tokio::task;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Channel {

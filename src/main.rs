@@ -2,7 +2,10 @@ use anyhow::Result;
 use clap::Parser;
 use colored::*;
 use std::process;
-use tracing::{info, warn, error};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tracing::{info, error, debug};
+use tokio::signal;
 
 mod config;
 mod player;
@@ -81,7 +84,80 @@ fn print_banner() {
     println!();
 }
 
+/// Restore terminal to normal state
+fn cleanup_terminal() {
+    debug!("Cleaning up terminal state");
+    
+    use utils::terminal::*;
+    use std::io::{self, Write};
+    
+    // Print escape sequences to restore terminal
+    print!("{}{}{}{}", 
+        EXIT_ALTERNATE_SCREEN,
+        SHOW_CURSOR,
+        RESET_COLORS,
+        RESET_TERMINAL
+    );
+    
+    // Flush output immediately
+    let _ = io::stdout().flush();
+    
+    // Give terminal time to process escape sequences
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    
+    debug!("Terminal cleanup completed");
+}
+
+/// Setup signal handlers for graceful shutdown
+async fn setup_signal_handlers(running: Arc<AtomicBool>) -> Result<()> {
+    tokio::select! {
+        _ = signal::ctrl_c() => {
+            debug!("Received Ctrl+C signal");
+            running.store(false, Ordering::Relaxed);
+        }
+        _ = async {
+            #[cfg(unix)]
+            {
+                use tokio::signal::unix::{signal, SignalKind};
+                let mut sigterm = signal(SignalKind::terminate())?;
+                let mut sigint = signal(SignalKind::interrupt())?;
+                
+                tokio::select! {
+                    _ = sigterm.recv() => {
+                        debug!("Received SIGTERM");
+                    }
+                    _ = sigint.recv() => {
+                        debug!("Received SIGINT");
+                    }
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                // On Windows, just wait indefinitely
+                std::future::pending::<()>().await;
+            }
+            Ok::<(), anyhow::Error>(())
+        } => {
+            running.store(false, Ordering::Relaxed);
+        }
+    }
+    
+    cleanup_terminal();
+    Ok(())
+}
+
 async fn run_app(args: Args) -> Result<()> {
+    // Create a flag for graceful shutdown
+    let running = Arc::new(AtomicBool::new(true));
+    let running_clone = running.clone();
+    
+    // Setup signal handlers in background
+    tokio::spawn(async move {
+        if let Err(e) = setup_signal_handlers(running_clone).await {
+            error!("Signal handler error: {}", e);
+        }
+    });
+    
     // Load configuration
     let config = Config::load(args.config.as_deref())?;
     
@@ -90,6 +166,7 @@ async fn run_app(args: Args) -> Result<()> {
         .or(config.default_playlist.clone())
         .unwrap_or_else(|| {
             error!("No playlist specified. Use --playlist or set default in config.");
+            cleanup_terminal();
             process::exit(1);
         });
 
@@ -105,6 +182,7 @@ async fn run_app(args: Args) -> Result<()> {
     // Handle special commands
     if args.list {
         player.list_playlists().await?;
+        cleanup_terminal();
         return Ok(());
     }
 
@@ -113,18 +191,23 @@ async fn run_app(args: Args) -> Result<()> {
 
     if args.stats {
         player.show_statistics();
+        cleanup_terminal();
         return Ok(());
     }
 
     if let Some(search_term) = args.search {
         player.search_channels(&search_term).await?;
+        cleanup_terminal();
         return Ok(());
     }
 
-    // Start interactive mode
-    player.run_interactive().await?;
-
-    Ok(())
+    // Start interactive mode with graceful shutdown support
+    let result = player.run_interactive_with_shutdown(running).await;
+    
+    // Always cleanup on exit
+    cleanup_terminal();
+    
+    result
 }
 
 #[tokio::main]
@@ -132,6 +215,15 @@ async fn main() {
     let args = Args::parse();
     
     setup_logging(args.verbose);
+    
+    // Setup panic handler for emergency cleanup
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("Application panicked: {}", panic_info);
+        cleanup_terminal();
+        // Additional emergency cleanup
+        utils::terminal::emergency_terminal_reset();
+    }));
+    
     print_banner();
 
     if let Err(e) = run_app(args).await {
@@ -144,6 +236,8 @@ async fn main() {
             source = err.source();
         }
         
+        // Ensure terminal is cleaned up even on error
+        cleanup_terminal();
         process::exit(1);
     }
 }

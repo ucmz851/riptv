@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
 use colored::*;
-use std::collections::HashMap;
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
-use tokio::time::sleep;
+use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
-use crate::playlist::{Channel, PlaylistParser, PlaylistStats};
+use crate::playlist::{Channel, PlaylistParser};
 use crate::ui::ChannelSelector;
 use crate::utils::format_duration;
 
@@ -18,6 +18,7 @@ pub struct IptvPlayer {
     history: Vec<String>,
     favorites: Vec<String>,
     last_played: Option<Instant>,
+    current_player_process: Option<Child>,
 }
 
 impl IptvPlayer {
@@ -29,6 +30,7 @@ impl IptvPlayer {
             history: Vec::new(),
             favorites: Vec::new(),
             last_played: None,
+            current_player_process: None,
         }
     }
 
@@ -38,7 +40,7 @@ impl IptvPlayer {
 
         let channels = self.parser.get_channels();
         if channels.is_empty() {
-            warn!("⚠️  No channels found in playlist");
+            warn!("⚠️ No channels found in playlist");
         } else {
             info!("✅ Successfully loaded {} channels", channels.len().to_string().bright_green().bold());
         }
@@ -49,13 +51,7 @@ impl IptvPlayer {
     pub async fn list_playlists(&self) -> Result<()> {
         println!("{}", "📋 Available Playlists:".bright_cyan().bold());
         
-        // This would scan for .m3u files in common directories
-        let common_paths = [
-            ".",
-            "~/Downloads",
-            "~/Documents",
-            "/tmp",
-        ];
+        let common_paths = [".", "~/Downloads", "~/Documents", "/tmp"];
 
         for path in &common_paths {
             if let Ok(entries) = std::fs::read_dir(path) {
@@ -85,7 +81,6 @@ impl IptvPlayer {
             println!("\n{}", "📋 Top Groups:".bright_magenta());
             let mut groups: Vec<_> = stats.channels_per_group.iter().collect();
             groups.sort_by(|a, b| b.1.cmp(a.1));
-            
             for (group, count) in groups.iter().take(10) {
                 println!("  📺 {} ({} channels)", group.bright_white(), count.to_string().bright_green());
             }
@@ -95,17 +90,15 @@ impl IptvPlayer {
             println!("\n{}", "🌍 Countries:".bright_blue());
             let mut countries: Vec<_> = stats.countries.iter().collect();
             countries.sort_by(|a, b| b.1.cmp(a.1));
-            
             for (country, count) in countries.iter().take(10) {
-                println!("  🏳️  {} ({} channels)", country.bright_white(), count.to_string().bright_green());
+                println!("  🏳️ {} ({} channels)", country.bright_white(), count.to_string().bright_green());
             }
         }
 
         if !stats.languages.is_empty() {
-            println!("\n{}", "🗣️  Languages:".bright_cyan());
+            println!("\n{}", "🗣️ Languages:".bright_cyan());
             let mut languages: Vec<_> = stats.languages.iter().collect();
             languages.sort_by(|a, b| b.1.cmp(a.1));
-            
             for (language, count) in languages.iter().take(10) {
                 println!("  🔤 {} ({} channels)", language.bright_white(), count.to_string().bright_green());
             }
@@ -114,7 +107,6 @@ impl IptvPlayer {
 
     pub async fn search_channels(&self, query: &str) -> Result<()> {
         info!("🔍 Searching for: '{}'", query.bright_yellow());
-        
         let results = self.parser.search_channels(query);
         
         if results.is_empty() {
@@ -140,33 +132,27 @@ impl IptvPlayer {
 
     pub async fn run_interactive(&mut self) -> Result<()> {
         let channels = self.parser.get_channels().to_vec();
-        
         if channels.is_empty() {
             error!("No channels available for playback");
             return Ok(());
         }
 
         info!("🚀 Starting interactive mode with {} channels", channels.len());
-        
         let mut selector = ChannelSelector::new(channels, &self.config);
-        
+
         loop {
             match selector.select_channel().await? {
                 Some(channel) => {
                     self.add_to_history(&channel.name);
-                    
+
                     if let Err(e) = self.play_channel(&channel).await {
                         error!("Failed to play channel '{}': {}", channel.name, e);
-                        
-                        // Show error and continue
                         println!("{}", format!("❌ Error playing channel: {}", e).bright_red());
                         println!("{}", "Press any key to continue...".bright_yellow());
-                        
-                        // Wait for user input
                         let mut input = String::new();
                         std::io::stdin().read_line(&mut input).ok();
                     }
-                    
+
                     println!("{}", "🔄 Returning to channel selection...".bright_cyan());
                 }
                 None => {
@@ -179,26 +165,74 @@ impl IptvPlayer {
         Ok(())
     }
 
+    pub async fn run_interactive_with_shutdown(&mut self, running: Arc<AtomicBool>) -> Result<()> {
+        let channels = self.parser.get_channels().to_vec();
+        if channels.is_empty() {
+            error!("No channels available for playback");
+            return Ok(());
+        }
+
+        info!("🚀 Starting interactive mode with {} channels", channels.len());
+        let mut selector = ChannelSelector::new(channels, &self.config);
+
+        loop {
+            if !running.load(Ordering::Relaxed) {
+                debug!("Shutdown requested, exiting interactive mode");
+                break;
+            }
+
+            match selector.select_channel().await? {
+                Some(channel) => {
+                    self.add_to_history(&channel.name);
+                    if let Err(e) = self.play_channel(&channel).await {
+                        error!("Failed to play channel '{}': {}", channel.name, e);
+                        println!("{}", format!("❌ Error playing channel: {}", e).bright_red());
+                        println!("{}", "Press any key to continue...".bright_yellow());
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input).ok();
+                    }
+
+                    println!("{}", "🔄 Returning to channel selection...".bright_cyan());
+                }
+                None => {
+                    println!("{}", "👋 Thanks for using RIPTV!".bright_magenta().bold());
+                    break;
+                }
+            }
+        }
+
+        self.cleanup().await?;
+        Ok(())
+    }
+
+    pub async fn cleanup(&mut self) -> Result<()> {
+        debug!("Performing player cleanup");
+
+        if let Some(mut child) = self.current_player_process.take() {
+            debug!("Terminating media player process");
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
+        debug!("Player cleanup completed");
+        Ok(())
+    }
+
     async fn play_channel(&mut self, channel: &Channel) -> Result<()> {
         info!("🎬 Playing: {}", channel.name.bright_green().bold());
-        
+
         if let Some(group) = &channel.group {
             info!("📁 Group: {}", group.bright_blue());
         }
 
-        // Check if player exists
         self.validate_player()?;
-
         let start_time = Instant::now();
         self.last_played = Some(start_time);
 
-        // Build player command with optimized arguments
         let mut cmd = Command::new(&self.player_cmd);
-        
-        // Basic arguments
         cmd.arg(&channel.url);
-        
-        // Performance optimizations
+
+        // Optimized player arguments
         cmd.args(&[
             "--cache=yes",
             "--demuxer-max-bytes=100M",
@@ -207,37 +241,19 @@ impl IptvPlayer {
             "--no-terminal",
             "--quiet",
             "--really-quiet",
-        ]);
-
-        // Video optimizations
-        cmd.args(&[
             "--hwdec=auto-safe",
             "--vo=gpu",
             "--gpu-context=auto",
             "--profile=fast",
-        ]);
-
-        // Network optimizations
-        cmd.args(&[
             "--network-timeout=10",
             "--stream-buffer-size=1024k",
             "--demuxer-thread=yes",
         ]);
 
-        // User-defined arguments from config
         if let Some(extra_args) = &self.config.player_args {
             for arg in extra_args {
                 cmd.arg(arg);
             }
-        }
-
-        // Platform-specific optimizations
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-            cmd.stdout(Stdio::null());
-            cmd.stderr(Stdio::null());
         }
 
         #[cfg(unix)]
@@ -246,88 +262,69 @@ impl IptvPlayer {
             cmd.stderr(Stdio::null());
         }
 
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+            cmd.stdout(Stdio::null());
+            cmd.stderr(Stdio::null());
+        }
+
         debug!("Executing: {} {}", self.player_cmd, channel.url);
-
-        // Launch player and wait
-        let mut child = cmd.spawn()
+        let child = cmd.spawn()
             .with_context(|| format!("Failed to start media player: {}", self.player_cmd))?;
+        self.current_player_process = Some(child);
 
-        // Show playback info
         println!("{}", "🎥 Player started. Controls:".bright_cyan());
         println!("   {} Quit player", "q".bright_white().bold());
         println!("   {} Toggle fullscreen", "f".bright_white().bold());
         println!("   {} Volume up/down", "9/0".bright_white().bold());
         println!("   {} Seek backward/forward", "←/→".bright_white().bold());
 
-        // Wait for player to finish
-        let status = child.wait()
-            .with_context(|| "Failed to wait for media player")?;
+        // Wait for process to finish
+        if let Some(ref mut process) = self.current_player_process {
+            let status = process.wait().with_context(|| "Failed to wait for media player")?;
+            self.current_player_process = None;
 
-        let duration = start_time.elapsed();
-        
-        if status.success() {
-            info!("✅ Playback finished (duration: {})", format_duration(duration));
-        } else {
-            warn!("⚠️  Player exited with error code: {:?}", status.code());
+            let duration = start_time.elapsed();
+            if status.success() {
+                info!("✅ Playback finished (duration: {})", format_duration(duration));
+            } else {
+                warn!("⚠️ Player exited with error code: {:?}", status.code());
+            }
         }
 
         Ok(())
     }
 
     fn validate_player(&self) -> Result<()> {
-        // Check if player command exists
-        let output = Command::new("which")
-            .arg(&self.player_cmd)
-            .output();
-
+        let output = Command::new("which").arg(&self.player_cmd).output();
         match output {
-            Ok(output) if output.status.success() => {
-                debug!("Player found: {}", self.player_cmd);
-                Ok(())
-            }
+            Ok(o) if o.status.success() => Ok(debug!("Player found: {}", self.player_cmd)),
             _ => {
-                // Try Windows-style check
-                let output = Command::new("where")
-                    .arg(&self.player_cmd)
-                    .output();
-
+                let output = Command::new("where").arg(&self.player_cmd).output();
                 match output {
-                    Ok(output) if output.status.success() => {
-                        debug!("Player found: {}", self.player_cmd);
-                        Ok(())
-                    }
-                    _ => {
-                        anyhow::bail!(
-                            "Media player '{}' not found. Please install {} or specify a different player with --player",
-                            self.player_cmd,
-                            self.player_cmd
-                        );
-                    }
+                    Ok(o) if o.status.success() => Ok(debug!("Player found: {}", self.player_cmd)),
+                    _ => anyhow::bail!(
+                        "Media player '{}' not found. Please install {} or specify a different player with --player",
+                        self.player_cmd,
+                        self.player_cmd
+                    ),
                 }
             }
         }
     }
 
     fn add_to_history(&mut self, channel_name: &str) {
-        // Remove if already exists to avoid duplicates
         self.history.retain(|name| name != channel_name);
-        
-        // Add to front
         self.history.insert(0, channel_name.to_string());
-        
-        // Keep only last 50 entries
         if self.history.len() > 50 {
             self.history.truncate(50);
         }
     }
 
-    pub fn get_history(&self) -> &[String] {
-        &self.history
-    }
-
-    pub fn get_favorites(&self) -> &[String] {
-        &self.favorites
-    }
+    pub fn get_history(&self) -> &[String] { &self.history }
+    pub fn get_favorites(&self) -> &[String] { &self.favorites }
 
     pub fn add_favorite(&mut self, channel_name: &str) {
         if !self.favorites.contains(&channel_name.to_string()) {
@@ -337,5 +334,14 @@ impl IptvPlayer {
 
     pub fn remove_favorite(&mut self, channel_name: &str) {
         self.favorites.retain(|name| name != channel_name);
+    }
+}
+
+impl Drop for IptvPlayer {
+    fn drop(&mut self) {
+        debug!("IptvPlayer being dropped, performing emergency cleanup");
+        if let Some(mut child) = self.current_player_process.take() {
+            let _ = child.kill();
+        }
     }
 }

@@ -7,6 +7,7 @@ use tracing::debug;
 
 use crate::config::Config;
 use crate::playlist::Channel;
+use crate::utils::terminal;
 
 #[derive(Debug, Clone)]
 pub struct ChannelItem {
@@ -15,30 +16,30 @@ pub struct ChannelItem {
 }
 
 impl SkimItem for ChannelItem {
-    fn text(&self) -> Cow<str> {
+fn text(&self) -> Cow<'_, str> {
         Cow::Borrowed(&self.display_text)
     }
 
     fn preview(&self, _context: PreviewContext) -> ItemPreview {
         let mut preview = String::new();
-        
+
         preview.push_str(&format!("🎬 {}\n", self.channel.name.bright_cyan().bold()));
         preview.push_str(&format!("🔗 {}\n\n", self.channel.url.bright_white()));
-        
+
         if let Some(group) = &self.channel.group {
             preview.push_str(&format!("📁 Group: {}\n", group.bright_blue()));
         }
-        
+
         if let Some(country) = &self.channel.country {
             preview.push_str(&format!("🌍 Country: {}\n", country.bright_green()));
         }
-        
+
         if let Some(language) = &self.channel.language {
-            preview.push_str(&format!("🗣️  Language: {}\n", language.bright_yellow()));
+            preview.push_str(&format!("🗣️ Language: {}\n", language.bright_yellow()));
         }
-        
+
         if let Some(logo) = &self.channel.logo {
-            preview.push_str(&format!("🖼️  Logo: {}\n", logo.bright_magenta()));
+            preview.push_str(&format!("🖼️ Logo: {}\n", logo.bright_magenta()));
         }
 
         preview.push_str("\n📋 Controls:\n");
@@ -65,7 +66,7 @@ impl ChannelSelector {
                     Some(group) => format!("[{}] {}", group, channel.name),
                     None => channel.name.clone(),
                 };
-                
+
                 ChannelItem {
                     channel,
                     display_text,
@@ -82,34 +83,49 @@ impl ChannelSelector {
     pub async fn select_channel(&mut self) -> Result<Option<Channel>> {
         debug!("Starting channel selection with {} channels", self.channels.len());
 
-        // Create the fuzzy finder options
+        terminal::init_terminal();
+        let result = self.run_selection().await;
+        terminal::restore_terminal();
+
+        result
+    }
+
+    async fn run_selection(&mut self) -> Result<Option<Channel>> {
+        let logo_header = r#"
+██████╗ ██╗██████╗ ████████╗██╗   ██╗
+██╔══██╗██║██╔══██╗╚══██╔══╝██║   ██║
+██████╔╝██║██████╔╝   ██║   ██║   ██║
+██╔══██╗██║██╔═══╝    ██║   ╚██╗ ██╔╝
+██║  ██║██║██║        ██║    ╚████╔╝ 
+╚═╝  ╚═╝╚═╝╚═╝        ╚═╝     ╚═══╝
+⚡ RIPTV - Blazing Fast IPTV Player v1.0
+🦀 Written in Rust for Maximum Performance
+Use arrows or Ctrl-J/K to navigate channels
+Press Tab for preview, Enter to play, Esc to quit
+"#;
+
         let options = SkimOptionsBuilder::default()
             .height(Some("70%"))
             .multi(false)
             .prompt(Some("⚡ RIPTV > "))
             .preview(Some(""))
             .preview_window(Some("right:50%:wrap"))
-            .header(Some("🎬 Select a channel to play (Tab for preview, Esc to quit)"))
+            .header(Some(logo_header))
             .bind(vec![
                 "ctrl-j:down",
-                "ctrl-k:up", 
+                "ctrl-k:up",
                 "ctrl-d:half-page-down",
                 "ctrl-u:half-page-up",
                 "ctrl-f:page-down",
                 "ctrl-b:page-up",
                 "alt-enter:accept",
+                "ctrl-c:abort",
             ])
-            .color(Some("
-                fg:#f8f8f2,bg:#282a36,hl:#8be9fd,
-                fg+:#f8f8f2,bg+:#44475a,hl+:#8be9fd,
-                info:#f1fa8c,prompt:#50fa7b,pointer:#ff79c6,
-                marker:#f1fa8c,spinner:#ffb86c,header:#6272a4
-            "))
             .reverse(true)
             .build()?;
 
-        // Convert channels to text for skim
-        let input = self.channels
+        let input = self
+            .channels
             .iter()
             .map(|item| item.display_text.as_str())
             .collect::<Vec<_>>()
@@ -118,8 +134,9 @@ impl ChannelSelector {
         let item_reader = SkimItemReader::default();
         let items = item_reader.of_bufread(Cursor::new(input));
 
-        // Run the selection
-        match Skim::run_with(&options, Some(items)) {
+        let output = Skim::run_with(&options, Some(items));
+
+        match output {
             Some(output) => {
                 if output.is_abort {
                     debug!("User aborted selection");
@@ -130,7 +147,6 @@ impl ChannelSelector {
                     let selected_text = selected_item.output();
                     debug!("User selected: {}", selected_text);
 
-                    // Find the corresponding channel
                     for item in &self.channels {
                         if item.display_text == selected_text {
                             return Ok(Some(item.channel.clone()));
@@ -148,14 +164,25 @@ impl ChannelSelector {
     }
 }
 
+impl Drop for ChannelSelector {
+    fn drop(&mut self) {
+        debug!("ChannelSelector being dropped, ensuring terminal cleanup");
+        terminal::ensure_clean_terminal();
+    }
+}
+
+// -----------------------------------
+// Helper UI functions
+// -----------------------------------
+
 pub fn show_welcome_message() {
     println!("{}", "🎉 Welcome to RIPTV!".bright_magenta().bold());
     println!("{}", "The blazing fast IPTV player written in Rust.".bright_cyan());
     println!();
-    
+
     println!("{}", "🚀 Features:".bright_yellow().bold());
     println!("  ⚡ Lightning-fast playlist parsing");
-    println!("  🔍 Fuzzy search with real-time filtering");  
+    println!("  🔍 Fuzzy search with real-time filtering");
     println!("  🎬 Optimized media playback");
     println!("  📊 Detailed playlist statistics");
     println!("  💾 Channel history and favorites");
@@ -177,7 +204,7 @@ pub fn show_loading_animation(message: &str) {
     use std::time::Duration;
 
     let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    
+
     print!("{} ", message);
     io::stdout().flush().unwrap();
 
@@ -188,7 +215,7 @@ pub fn show_loading_animation(message: &str) {
             thread::sleep(Duration::from_millis(100));
         }
     }
-    
+
     println!("\r{} ✅", message);
 }
 
@@ -213,7 +240,7 @@ pub fn display_error(error: &str) {
 }
 
 pub fn display_warning(warning: &str) {
-    println!("{} {}", "⚠️  Warning:".bright_yellow().bold(), warning);
+    println!("{} {}", "⚠️ Warning:".bright_yellow().bold(), warning);
 }
 
 pub fn display_success(message: &str) {
@@ -221,5 +248,5 @@ pub fn display_success(message: &str) {
 }
 
 pub fn display_info(message: &str) {
-    println!("{} {}", "ℹ️  Info:".bright_blue().bold(), message);
+    println!("{} {}", "ℹ️ Info:".bright_blue().bold(), message);
 }

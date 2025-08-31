@@ -1,5 +1,84 @@
 use std::time::Duration;
 
+/// Terminal control escape sequences and utilities
+pub mod terminal {
+    use std::io::{self, Write};
+    
+    /// Terminal escape sequences
+    pub const ENTER_ALTERNATE_SCREEN: &str = "\x1B[?1049h";
+    pub const EXIT_ALTERNATE_SCREEN: &str = "\x1B[?1049l";
+    pub const HIDE_CURSOR: &str = "\x1B[?25l";
+    pub const SHOW_CURSOR: &str = "\x1B[?25h";
+    pub const RESET_COLORS: &str = "\x1B[0m";
+    pub const RESET_TERMINAL: &str = "\x1Bc";  // RIS - Reset to Initial State
+    pub const CLEAR_SCREEN: &str = "\x1B[2J";
+    pub const MOVE_CURSOR_HOME: &str = "\x1B[H";
+    pub const SOFT_RESET: &str = "\x1B[!p";
+    
+    /// Ensure terminal is in a clean state
+    pub fn ensure_clean_terminal() {
+        print!("{}{}{}{}", 
+            EXIT_ALTERNATE_SCREEN,
+            SHOW_CURSOR, 
+            RESET_COLORS,
+            RESET_TERMINAL
+        );
+        
+        let _ = io::stdout().flush();
+        
+        // Give terminal time to process
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    
+    /// Initialize terminal for TUI mode
+    pub fn init_terminal() {
+        print!("{}{}", ENTER_ALTERNATE_SCREEN, HIDE_CURSOR);
+        let _ = io::stdout().flush();
+    }
+    
+    /// Restore terminal from TUI mode
+    pub fn restore_terminal() {
+        ensure_clean_terminal();
+    }
+    
+    /// Emergency terminal reset (call this in panic handlers)
+    pub fn emergency_terminal_reset() {
+        // More aggressive reset sequence
+        print!("{}", SOFT_RESET);      // Soft reset
+        print!("{}", EXIT_ALTERNATE_SCREEN);  // Exit alternate screen
+        print!("{}", SHOW_CURSOR);    // Show cursor
+        print!("{}", RESET_COLORS);      // Reset attributes
+        print!("{}", RESET_TERMINAL);        // Full reset
+        print!("\x0C");         // Form feed (clear screen)
+        
+        let _ = io::stdout().flush();
+        let _ = io::stderr().flush();
+        
+        // Give more time for emergency reset
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    
+    #[cfg(unix)]
+    pub fn reset_terminal_unix() {
+        use std::process::Command;
+        
+        // Use system commands as a fallback
+        let _ = Command::new("reset").output();
+        let _ = Command::new("stty").arg("sane").output();
+    }
+    
+    /// Comprehensive terminal cleanup
+    pub fn comprehensive_cleanup() {
+        ensure_clean_terminal();
+        
+        #[cfg(unix)]
+        reset_terminal_unix();
+        
+        // Give the terminal extra time to process the escape sequences
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
 /// Format duration in a human-readable format
 pub fn format_duration(duration: Duration) -> String {
     let total_seconds = duration.as_secs();
@@ -262,5 +341,12 @@ mod tests {
         assert!(is_valid_url("http://test.tv/channel"));
         assert!(!is_valid_url("not-a-url"));
         assert!(!is_valid_url(""));
+    }
+
+    #[test]
+    fn test_terminal_cleanup() {
+        // Test that terminal utilities don't panic
+        terminal::ensure_clean_terminal();
+        terminal::emergency_terminal_reset();
     }
 }
