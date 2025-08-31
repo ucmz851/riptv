@@ -1,4 +1,3 @@
-````markdown
 # 🦀 RIPTV - Blazing Fast IPTV Player
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
@@ -7,7 +6,7 @@
 
 ⚡ **RIPTV** is a lightning-fast IPTV player written in Rust, designed to handle large playlists with instant search and blazing performance.
 
-> **Currently supported on Linux only.**  
+> **Currently supported on Linux only.**
 > macOS and Windows support are **under development**.
 
 ---
@@ -25,16 +24,6 @@
 
 ---
 
-## 📸 Screenshot
-
-<p align="center">
-  <img src="docs/screenshot.png" alt="RIPTV Screenshot" width="800">
-</p>
-
-> 🎨 *RIPTV TUI in action: blazing-fast search & playback right from your terminal.*
-
----
-
 ## 📦 Installation (Linux)
 
 ### ⚡ One-Liner Install (Recommended)
@@ -43,7 +32,7 @@ Just copy-paste this into your terminal:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/ucmz851/riptv/main/install.sh | bash
-````
+```
 
 This will:
 ✅ Download the repo
@@ -119,21 +108,17 @@ Example:
 
 ---
 
-## 🤝 Contributing
-
-1. Fork the repo
-2. Create a branch (`git checkout -b feature-name`)
-3. Commit changes (`git commit -m "feat: add new feature"`)
-4. Push to branch (`git push origin feature-name`)
-5. Open a Pull Request
-
----
-
 ## 📜 License
 
 MIT License. See [LICENSE](LICENSE) for details.
 
+**Made with ❤️ and 🦀 Rust**
+
 ---
 
-**Made with ❤️ and 🦀 Rust**
-```
+👉 This makes your **README** super clear:
+
+* Users see the **big shiny one-liner** right away.
+* Manual steps are still there for devs.
+
+Would you like me to also **add a badge** (like `Install via One-liner`) at the top, so the copy-paste command stands out even more?
